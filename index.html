@@ -1,117 +1,204 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Car Driving Game</title>
-  <style>
-    body {
-      margin: 0;
-      background: #111;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      font-family: Arial, sans-serif;
-      color: white;
-    }
-    canvas {
-      background: #2b2b2b;
-      border: 3px solid #fff;
-    }
-    .hint {
-      position: absolute;
-      bottom: 20px;
-      font-size: 14px;
-      opacity: 0.8;
-    }
-  </style>
+<meta charset="UTF-8">
+<title>Professional 3D Racing Game</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+body { margin: 0; overflow: hidden; background: black; font-family: Arial; }
+#hud {
+  position: absolute; top: 10px; left: 10px;
+  color: white; background: rgba(0,0,0,.5);
+  padding: 12px; border-radius: 10px;
+}
+#mobile {
+  position: absolute; bottom: 20px; width: 100%;
+  display: flex; justify-content: space-around;
+}
+.btn {
+  width: 70px; height: 70px;
+  background: rgba(255,255,255,.2);
+  border-radius: 50%;
+  color: white; font-size: 28px;
+  display: flex; align-items: center; justify-content: center;
+  user-select: none;
+}
+</style>
 </head>
+
 <body>
-  <canvas id="game" width="800" height="500"></canvas>
-  <div class="hint">Use ⬅️ ➡️ ⬆️ ⬇️ to drive</div>
 
-  <script>
-    const canvas = document.getElementById("game");
-    const ctx = canvas.getContext("2d");
+<div id="hud">
+Speed: <span id="speed">0</span> km/h<br>
+Lap: <span id="lap">1</span>/3
+</div>
 
-    // Car object
-    const car = {
-      x: canvas.width / 2,
-      y: canvas.height - 100,
-      width: 40,
-      height: 70,
-      speed: 0,
-      maxSpeed: 6,
-      acceleration: 0.2,
-      friction: 0.05,
-      angle: 0
-    };
+<div id="mobile">
+<div class="btn" id="left">◀</div>
+<div class="btn" id="gas">▲</div>
+<div class="btn" id="brake">▼</div>
+<div class="btn" id="right">▶</div>
+</div>
 
-    const keys = {};
+<!-- LIBRARIES -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.158/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.158/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"></script>
 
-    document.addEventListener("keydown", e => keys[e.key] = true);
-    document.addEventListener("keyup", e => keys[e.key] = false);
+<script>
+// ================= SCENE =================
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
 
-    function update() {
-      // Accelerate / Brake
-      if (keys["ArrowUp"]) car.speed += car.acceleration;
-      if (keys["ArrowDown"]) car.speed -= car.acceleration;
+// CAMERA
+const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 500);
 
-      // Turning
-      if (keys["ArrowLeft"]) car.angle -= 0.04;
-      if (keys["ArrowRight"]) car.angle += 0.04;
+// RENDERER
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
 
-      // Clamp speed
-      car.speed = Math.max(-car.maxSpeed / 2, Math.min(car.speed, car.maxSpeed));
+// LIGHTS
+scene.add(new THREE.AmbientLight(0xffffff, .4));
+const sun = new THREE.DirectionalLight(0xffffff, 1);
+sun.position.set(10,20,10);
+sun.castShadow = true;
+scene.add(sun);
 
-      // Friction
-      if (car.speed > 0) car.speed -= car.friction;
-      if (car.speed < 0) car.speed += car.friction;
-      if (Math.abs(car.speed) < car.friction) car.speed = 0;
+// ================= PHYSICS =================
+const world = new CANNON.World({ gravity: new CANNON.Vec3(0,-9.82,0) });
 
-      // Move car
-      car.x += Math.sin(car.angle) * car.speed;
-      car.y -= Math.cos(car.angle) * car.speed;
+// GROUND
+const groundBody = new CANNON.Body({
+  mass: 0,
+  shape: new CANNON.Plane()
+});
+groundBody.quaternion.setFromEuler(-Math.PI/2,0,0);
+world.addBody(groundBody);
 
-      // Keep car inside screen
-      car.x = Math.max(0, Math.min(canvas.width, car.x));
-      car.y = Math.max(0, Math.min(canvas.height, car.y));
-    }
+const groundMesh = new THREE.Mesh(
+  new THREE.PlaneGeometry(500,500),
+  new THREE.MeshStandardMaterial({color:0x444444})
+);
+groundMesh.rotation.x = -Math.PI/2;
+groundMesh.receiveShadow = true;
+scene.add(groundMesh);
 
-    function drawCar() {
-      ctx.save();
-      ctx.translate(car.x, car.y);
-      ctx.rotate(car.angle);
-      ctx.fillStyle = "red";
-      ctx.fillRect(-car.width / 2, -car.height / 2, car.width, car.height);
-      ctx.fillStyle = "white";
-      ctx.fillRect(-10, -car.height / 2 + 5, 20, 10); // windshield
-      ctx.restore();
-    }
+// ROAD
+const road = new THREE.Mesh(
+  new THREE.BoxGeometry(10,.1,300),
+  new THREE.MeshStandardMaterial({color:0x222222})
+);
+road.position.y = .05;
+scene.add(road);
 
-    function drawRoad() {
-      ctx.fillStyle = "#555";
-      ctx.fillRect(150, 0, 500, canvas.height);
+// ================= PLAYER CAR =================
+const carBody = new CANNON.Body({
+  mass: 150,
+  shape: new CANNON.Box(new CANNON.Vec3(1,0.5,2)),
+  position: new CANNON.Vec3(0,1,0)
+});
+world.addBody(carBody);
 
-      ctx.strokeStyle = "#fff";
-      ctx.setLineDash([20, 20]);
-      ctx.beginPath();
-      ctx.moveTo(canvas.width / 2, 0);
-      ctx.lineTo(canvas.width / 2, canvas.height);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
+let carMesh;
+const loader = new THREE.GLTFLoader();
+loader.load(
+  "https://threejs.org/examples/models/gltf/Flamingo.glb",
+  g => {
+    carMesh = g.scene;
+    carMesh.scale.set(.01,.01,.01);
+    carMesh.castShadow = true;
+    scene.add(carMesh);
+  }
+);
 
-    function gameLoop() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      drawRoad();
-      update();
-      drawCar();
-      requestAnimationFrame(gameLoop);
-    }
+// ================= AI TRAFFIC =================
+const aiCars = [];
+for(let i=0;i<3;i++){
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(2,1,4),
+    new THREE.MeshStandardMaterial({color:0x00ff00})
+  );
+  mesh.position.set((i%2?2:-2),1,-50*i);
+  scene.add(mesh);
+  aiCars.push(mesh);
+}
 
-    gameLoop();
-  </script>
+// ================= CONTROLS =================
+const keys = {};
+document.addEventListener("keydown",e=>keys[e.key]=true);
+document.addEventListener("keyup",e=>keys[e.key]=false);
+
+// MOBILE
+const mobile = { gas:false, brake:false, left:false, right:false };
+["gas","brake","left","right"].forEach(id=>{
+  document.getElementById(id).ontouchstart=()=>mobile[id]=true;
+  document.getElementById(id).ontouchend=()=>mobile[id]=false;
+});
+
+// ================= RACING =================
+let lap = 1;
+const lapsTotal = 3;
+
+// ================= LOOP =================
+function animate(){
+  requestAnimationFrame(animate);
+  world.step(1/60);
+
+  // INPUT
+  let force = 0;
+  if(keys["w"]||keys["ArrowUp"]||mobile.gas) force=150;
+  if(keys["s"]||keys["ArrowDown"]||mobile.brake) force=-100;
+
+  if(keys["a"]||keys["ArrowLeft"]||mobile.left) carBody.angularVelocity.y=1.5;
+  if(keys["d"]||keys["ArrowRight"]||mobile.right) carBody.angularVelocity.y=-1.5;
+
+  carBody.applyForce(
+    new CANNON.Vec3(
+      Math.sin(carBody.quaternion.y)*force,
+      0,
+      Math.cos(carBody.quaternion.y)*force
+    ),
+    carBody.position
+  );
+
+  // SYNC MODEL
+  if(carMesh){
+    carMesh.position.copy(carBody.position);
+    carMesh.quaternion.copy(carBody.quaternion);
+  }
+
+  // CAMERA FOLLOW
+  const camOffset = new THREE.Vector3(0,5,10)
+    .applyQuaternion(carMesh?.quaternion || new THREE.Quaternion());
+  camera.position.copy(carBody.position).add(camOffset);
+  camera.lookAt(carBody.position);
+
+  // AI MOVE
+  aiCars.forEach(c=>c.position.z+=0.3);
+
+  // LAP CHECK
+  if(carBody.position.z < -140){
+    lap = Math.min(lapsTotal, lap+1);
+    carBody.position.z = 0;
+  }
+
+  document.getElementById("lap").innerText = lap;
+  document.getElementById("speed").innerText =
+    Math.abs(carBody.velocity.z*3.6).toFixed(0);
+
+  renderer.render(scene,camera);
+}
+
+animate();
+
+window.onresize=()=>{
+  camera.aspect=innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+};
+</script>
 </body>
 </html>
